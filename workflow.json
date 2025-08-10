@@ -1,0 +1,206 @@
+{
+  "name": "WhatsApp Google Drive Integration",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Twilio Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst messageBody = body.Body || '';\nconst fromNumber = body.From || '';\nconst toNumber = body.To || '';\n\n// Parse command\nconst commandRegex = /^(LIST|DELETE|MOVE|SUMMARY|HELP)\\s+(.+)$/i;\nconst match = messageBody.trim().match(commandRegex);\n\nlet command = null;\nlet parameters = [];\n\nif (match) {\n  command = match[1].toUpperCase();\n  parameters = match[2].split('\\s+').filter(p => p.trim());\n} else if (messageBody.trim().toLowerCase() === 'help') {\n  command = 'HELP';\n}\n\nreturn {\n  json: {\n    originalMessage: messageBody,\n    fromNumber,\n    toNumber,\n    command,\n    parameters,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "command-parser",
+      "name": "Command Parser",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "id": "command",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "HELP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "output": 0
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "id": "command",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "LIST",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "output": 1
+            }
+          ]
+        }
+      },
+      "id": "command-router",
+      "name": "Command Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const helpMessage = `🤖 *WhatsApp Drive Bot - Available Commands*\\n\\n📋 LIST /folder_name\\n🗑️ DELETE /folder/file_name\\n📁 MOVE /folder/file_name /new_folder\\n📝 SUMMARY /folder_name\\n❓ Send HELP anytime`;\n\nreturn {\n  json: {\n    responseMessage: helpMessage,\n    command: 'HELP',\n    status: 'success'\n  }\n};"
+      },
+      "id": "help-generator",
+      "name": "Help Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "list",
+        "folderId": "={{ $json.parameters[0] }}",
+        "options": {
+          "q": "trashed=false"
+        }
+      },
+      "id": "list-files",
+      "name": "List Files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const files = $input.first().json.files || [];\nlet fileList = `📁 *${$('command-parser').item.json.parameters[0]}*\\n\\n`;\n\nif (files.length === 0) {\n  fileList += 'No files found in this folder.';\n} else {\n  files.forEach((file, index) => {\n    const fileType = file.mimeType.includes('folder') ? '📁' : '📄';\n    fileList += `${index + 1}. ${fileType} ${file.name}\\n`;\n  });\n  fileList += `\\nTotal: ${files.length} item(s)`;\n}\n\nreturn {\n  json: {\n    responseMessage: fileList,\n    command: 'LIST',\n    status: 'success'\n  }\n};"
+      },
+      "id": "format-file-list",
+      "name": "Format File List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "from": "={{ $json.toNumber }}",
+        "to": "={{ $json.fromNumber }}",
+        "body": "={{ $json.responseMessage }}"
+      },
+      "id": "twilio-reply",
+      "name": "Twilio Reply",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    }
+  ],
+  "connections": {
+    "Twilio Webhook": {
+      "main": [
+        [
+          {
+            "node": "Command Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Parser": {
+      "main": [
+        [
+          {
+            "node": "Command Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command Router": {
+      "main": [
+        [
+          {
+            "node": "Help Generator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Help Generator": {
+      "main": [
+        [
+          {
+            "node": "Twilio Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files": {
+      "main": [
+        [
+          {
+            "node": "Format File List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format File List": {
+      "main": [
+        [
+          {
+            "node": "Twilio Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

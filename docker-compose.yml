@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-whatsapp-drive
+    ports:
+      - "5678:5678"
+    environment:
+      # Basic Authentication
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=your_secure_password_here
+      
+      # Encryption
+      - N8N_ENCRYPTION_KEY=your_32_character_encryption_key_here
+      
+      # Webhook Configuration
+      - WEBHOOK_URL=https://your-domain.com
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      
+      # Database (SQLite for simplicity)
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+      
+      # Logging
+      - N8N_LOG_LEVEL=info
+      
+      # Security
+      - N8N_SECURE_COOKIE=true
+      - N8N_COOKIE_SECURE=true
+      
+      # Performance
+      - N8N_METRICS=true
+      - N8N_DIAGNOSTICS_ENABLED=true
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflow.json:/home/node/.n8n/workflows/workflow.json:ro
+      
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  default:
+    name: n8n-network
